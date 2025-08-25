@@ -1,0 +1,43 @@
+name: Notify Discord on Push
+
+on:
+  push:
+    branches:
+      - main   # デフォルトブランチが main 以外ならここを変えてください
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          REPO:   ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          PUSHER: ${{ github.actor }}
+          COMPARE: ${{ github.event.compare }}
+          MSG:    ${{ github.event.head_commit.message }}
+          SHA:    ${{ github.sha }}
+        run: |
+          jq -n \
+            --arg content "📢 Push on $REPO ($BRANCH) by $PUSHER" \
+            --arg url "$COMPARE" \
+            --arg msg "$MSG" \
+            --arg sha "$SHA" \
+            --arg repo "$REPO" \
+            --arg branch "$BRANCH" \
+            --arg pusher "$PUSHER" \
+            '{
+              content: $content,
+              embeds: [{
+                title: ("Commit " + $sha),
+                url: $url,
+                description: $msg,
+                fields: [
+                  {name:"Repository", value:$repo,   inline:true},
+                  {name:"Branch",     value:$branch, inline:true},
+                  {name:"Pusher",     value:$pusher, inline:true}
+                ]
+              }]
+            }' \
+          | curl -sS -X POST -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
