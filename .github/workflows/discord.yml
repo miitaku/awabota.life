@@ -2,25 +2,22 @@ name: Notify Discord on Push
 
 on:
   push:
-    branches:
-      - main  # デフォルトブランチが main 以外なら変更
+    branches: [ main ]
 
 jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
-      # 1) jq をインストール（JSON生成に使用）
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      # 2) Webhook Secret の形式を事前検証（空/形式不正ならここで止める）
       - name: Validate webhook secret
         shell: bash
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           if [[ -z "${DISCORD_WEBHOOK:-}" ]]; then
-            echo "ERROR: DISCORD_WEBHOOK is empty. Set it in Settings > Secrets > Actions."
+            echo "ERROR: DISCORD_WEBHOOK is empty."
             exit 1
           fi
           if [[ ! "$DISCORD_WEBHOOK" =~ ^https://(discord\.com|discordapp\.com)/api/webhooks/ ]]; then
@@ -28,10 +25,20 @@ jobs:
             exit 1
           fi
 
-      # 3) Discord へ通知
-      - name: Post to Discord
+      # ← 追加：URLの前後空白・改行・CRを除去して安全に出力
+      - name: Prepare webhook
+        id: prep
+        shell: bash
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          CLEAN=$(printf "%s" "$DISCORD_WEBHOOK" | tr -d '\r\n' | sed -e 's/^[[:space:]]\+//' -e 's/[[:space:]]\+$//')
+          echo "::add-mask::$CLEAN"
+          echo "url=$CLEAN" >> "$GITHUB_OUTPUT"
+
+      - name: Post to Discord
+        env:
+          WEBHOOK: ${{ steps.prep.outputs.url }}
           REPO:   ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
           PUSHER: ${{ github.actor }}
@@ -60,4 +67,4 @@ jobs:
                 ]
               }]
             }' \
-          | curl -sS -X POST -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
+          | curl -fsS -X POST -H "Content-Type: application/json" -d @- "$WEBHOOK"
